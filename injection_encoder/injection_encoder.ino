@@ -5,22 +5,38 @@
 #define CRANK 3
 #define CAM 2
 
-long encValue;
-int temp1;
-int temp2;
-int oldVal;
-int prevVal;
-int outVal;
+volatile uint32_t *setCAMPin = &PORT->Group[g_APinDescription[CAM].ulPort].OUTSET.reg;
+volatile uint32_t *clrCAMPin = &PORT->Group[g_APinDescription[CAM].ulPort].OUTCLR.reg;
+const uint32_t  CAMMASK = (1ul << g_APinDescription[CAM].ulPin);
+
+volatile uint32_t *setCRANKPin = &PORT->Group[g_APinDescription[CRANK].ulPort].OUTSET.reg;
+volatile uint32_t *clrCRANKPin = &PORT->Group[g_APinDescription[CRANK].ulPort].OUTCLR.reg;
+const uint32_t  CRANKMASK = (1ul << g_APinDescription[CRANK].ulPin);
+
+volatile uint32_t *setCSPin = &PORT->Group[g_APinDescription[chipSelectPin].ulPort].OUTSET.reg;
+volatile uint32_t *clrCSPin = &PORT->Group[g_APinDescription[chipSelectPin].ulPort].OUTCLR.reg;
+const uint32_t  CSMASK = (1ul << g_APinDescription[chipSelectPin].ulPin);
+
+unsigned long encValue;
+unsigned int temp1;
+unsigned int temp2;
+unsigned int oldVal;
+unsigned int prevVal;
+unsigned int outVal;
+byte encState;
+
 int readEncoder()           
 {
+  noInterrupts();
   long angleTemp;
   
-  digitalWrite(chipSelectPin, LOW);
+  *clrCSPin = CSMASK; 
   byte b1 = SPI.transfer(0xFF);
   byte b2 = SPI.transfer(0xFF);
 
   angleTemp = (((b1 << 8) | b2) & 0x3FFF);
-  digitalWrite(chipSelectPin, HIGH);
+  *setCSPin = CSMASK;
+  interrupts();
   return angleTemp;
 }
 
@@ -131,28 +147,35 @@ void setup()
  pinMode(CAM, OUTPUT);
  setupSPI();
  //readEncoderDiagnostics();
+ encState = 0;
 }
 
 void loop()
 {
- digitalWrite(CAM, LOW);
- digitalWrite(CAM, HIGH);
+ *clrCAMPin = CAMMASK;
+ *setCAMPin = CAMMASK;
+ 
  encValue = readEncoder();
  //temp1 = encValue * 2.1972; //gives values in degrees x 100
  temp1 = encValue  / 45.511;//gives values to nearest degree
  //SerialUSB.println(encValue);
  //SerialUSB.println(temp1);
  prevVal = temp2;
- temp2 = (int)(temp1 / 5) * 5;
+
+ // Multiples of 5
+ temp2 = temp1 / 5;
  //SerialUSB.println(temp2);
  
- if((temp2 == 5) || (temp2 == 15))
+ if((temp2 == 1/*5*/) || (temp2 == 3/*15*/))
  {
   //nothing happens here;
   //SerialUSB.println(digitalRead(CRANK));
  }else{
    if(temp2 != prevVal){
-    digitalWrite(CRANK, !(digitalRead(CRANK)));
+    if(encState ^= 1)
+    *setCRANKPin = CRANKMASK;
+    else
+    *clrCRANKPin = CRANKMASK;;
     //SerialUSB.println(digitalRead(CRANK));
    }
  }
